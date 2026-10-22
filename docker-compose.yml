@@ -1,0 +1,24 @@
+
+services:
+  business-ops-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: business-ops-agent:1.0
+    container_name: business-ops-agent
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_PATH: /app/data/business_ops.db
+      CHECKPOINT_DATABASE_PATH: /app/data/agent_checkpoints.db
+      PYTHONUNBUFFERED: "1"
+    ports:
+      - "8000:8000"
+    volumes:
+      - business_ops_data:/app/data
+
+volumes:
+  business_ops_data:
+    external: true
+    name: business-ops-agent_business_ops_data
