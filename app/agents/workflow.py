@@ -62,6 +62,80 @@ _workflow = None
 _workflow_lock = asyncio.Lock()
 
 
+def build_failure_response(state: AgentState) -> dict:
+    """?????????????????????"""
+    error = state.get("last_error") or "unknown error"
+    logger.warning(
+        "Supervisor detected tool failure: %s", error
+    )
+    return {
+        "messages": [
+            AIMessage(
+                content=(
+                    "\u62b1\u6b49\uff0c\u672c\u6b21\u64cd\u4f5c\u672a\u80fd\u5b8c\u6210\u3002"
+                    "\u5de5\u5177\u6267\u884c\u8fc7\u7a0b\u4e2d\u53d1\u751f\u5f02\u5e38\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\uff0c"
+                    "\u6216\u8054\u7cfb\u7cfb\u7edf\u7ba1\u7406\u5458\u68c0\u67e5\u65e5\u5fd7\u3002"
+                )
+            )
+        ],
+        "current_worker": None,
+        "status": "failed",
+    }
+
+
+
+async def invoke_supervisor(
+    state: AgentState,
+    supervisor_llm,
+) -> dict:
+    """失败时直接返回答复；正常时才调用模型。"""
+    if state.get("status") == "failed":
+        return build_failure_response(state)
+
+    messages = [
+        SystemMessage(content=SYSTEM_PROMPT),
+        *state["messages"],
+    ]
+
+    response = await supervisor_llm.ainvoke(messages)
+    tool_calls = getattr(response, "tool_calls", []) or []
+
+    current_worker = None
+
+    if tool_calls:
+        tool_name = tool_calls[0]["name"]
+        current_worker = TOOL_NODE_NAMES.get(tool_name)
+
+    return {
+        "messages": [response],
+        "current_worker": current_worker,
+        "status": "running",
+    }
+
+async def finalize(state: AgentState) -> dict:
+    """
+    结束当前工作流。
+
+    completed 表示工作流已走到最终答复阶段，
+    不代表所有业务操作都成功。
+    """
+    if state.get("status") == "failed":
+        logger.warning(
+            "工作流结束时存在失败状态 request_id=%s error=%s",
+            state.get("request_id", "unknown"),
+            state.get("last_error"),
+        )
+
+    return {
+        "status": (
+            "failed"
+            if state.get("status") == "failed"
+            else "completed"
+        ),
+        "current_worker": None,
+    }
+
+
 async def get_workflow():
     """异步初始化并缓存 LangGraph 工作流。"""
     global _workflow
@@ -92,6 +166,9 @@ async def get_workflow():
 
         async def supervisor(state: AgentState) -> dict:
             """分析当前消息，决定调用业务工具或直接回答。"""
+            if state.get("status") == "failed":
+                return build_failure_response(state)
+
             messages = [
                 SystemMessage(content=SYSTEM_PROMPT),
                 *state["messages"],
@@ -152,7 +229,7 @@ async def get_workflow():
             """创建一个执行 MCP 工具的异步 Worker。"""
             tool_node = ToolNode(
                 [tool_map[name] for name in tool_names],
-                handle_tool_errors=True,
+                handle_tool_errors=False,
             )
 
             async def worker(state: AgentState) -> dict:
@@ -230,25 +307,6 @@ async def get_workflow():
                     return result
 
             return worker
-
-        async def finalize(state: AgentState) -> dict:
-            """
-            结束当前工作流。
-
-            completed 表示工作流已走到最终答复阶段，
-            不代表所有业务操作都成功。
-            """
-            if state.get("status") == "failed":
-                logger.warning(
-                    "工作流结束时存在失败状态 request_id=%s error=%s",
-                    state.get("request_id", "unknown"),
-                    state.get("last_error"),
-                )
-
-            return {
-                "status": "completed",
-                "current_worker": None,
-            }
 
         builder = StateGraph(AgentState)
 
