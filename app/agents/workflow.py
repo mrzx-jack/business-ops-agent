@@ -391,11 +391,8 @@ async def async_run_agent(
             "Agent 执行异常 request_id=%s",
             request_id,
         )
+        raise
 
-        return (
-            "抱歉，本次业务处理暂时失败。"
-            f"请稍后重试；如需排查，请提供请求编号：{request_id}"
-        )
 
 
 def run_agent(

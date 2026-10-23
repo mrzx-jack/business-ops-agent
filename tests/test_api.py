@@ -87,3 +87,47 @@ def test_chat_rejects_oversized_message():
         )
 
     assert response.status_code == 422
+
+
+
+def test_chat_returns_500_when_agent_raises(monkeypatch):
+    """Agent 抛出未预期异常时，API 应返回 500 且不泄露内部错误。"""
+
+    async def failing_run_agent(
+        user_input: str,
+        thread_id: str,
+        request_id: str | None = None,
+    ) -> str:
+        raise RuntimeError("internal test failure")
+
+    async def fake_get_workflow():
+        return None
+
+    async def fake_close_checkpointer():
+        return None
+
+    monkeypatch.setattr(
+        "app.api.main.async_run_agent",
+        failing_run_agent,
+    )
+    monkeypatch.setattr(
+        "app.api.main.get_workflow",
+        fake_get_workflow,
+    )
+    monkeypatch.setattr(
+        "app.api.main.close_checkpointer",
+        fake_close_checkpointer,
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/chat",
+            json={
+                "message": "触发异常测试",
+                "thread_id": "api-error-test",
+            },
+        )
+
+    assert response.status_code == 500
+    assert "internal test failure" not in response.text
+    assert response.json()["detail"]

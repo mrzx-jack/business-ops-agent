@@ -11,11 +11,14 @@ from app.database.repository import (
 )
 
 
+
 @pytest.fixture(autouse=True)
-def prepare_database():
-    # 使用当前开发数据库进行基础验证。
-    # 后续会再升级为独立的临时测试数据库。
+def prepare_database(tmp_path, monkeypatch):
+    """每个测试使用独立的临时 SQLite 数据库。"""
+    test_db_path = tmp_path / "test_business_ops.db"
+    monkeypatch.setenv("DATABASE_PATH", str(test_db_path))
     init_db()
+
 
 
 def test_get_existing_customer():
