@@ -16,6 +16,10 @@ async def get_customer(customer_id: str) -> str:
         raise RuntimeError("模拟客户服务异常")
     return f"客户编号：{customer_id}，客户状态：正常"
 
+@tool
+async def query_customer_memories(customer_id: str) -> str:
+    """查询客户的长期记忆。"""
+    return f"客户 {customer_id} 暂无长期记忆"
 
 @tool
 async def query_tickets(customer_id: str) -> str:
@@ -83,6 +87,7 @@ async def setup_workflow(monkeypatch, fake_llm, checkpointer=None):
     async def fake_get_mcp_tools():
         return [
             get_customer,
+            query_customer_memories,
             query_tickets,
             get_ticket,
             create_business_ticket,
@@ -352,6 +357,7 @@ def test_sqlite_checkpointer_restores_history_after_reinitialization(
         async def fake_get_mcp_tools():
             return [
                 get_customer,
+                query_customer_memories,
                 query_tickets,
                 get_ticket,
                 create_business_ticket,

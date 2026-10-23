@@ -40,6 +40,31 @@ def init_db() -> None:
                     FOREIGN KEY (customer_id)
                         REFERENCES customers(id)
                 );
+                CREATE TABLE IF NOT EXISTS customer_memories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    customer_id INTEGER NOT NULL,
+                    memory_type TEXT NOT NULL
+                        CHECK (memory_type IN (
+                            'issue_history',
+                            'resolution',
+                            'preference',
+                            'pending_followup'
+                        )),
+                    content TEXT NOT NULL,
+                    source_ticket_code TEXT,
+                    is_active INTEGER NOT NULL DEFAULT 1
+                        CHECK (is_active IN (0, 1)),
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (customer_id)
+                        REFERENCES customers(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_customer_memories_customer
+                    ON customer_memories(customer_id, is_active);
+
+                CREATE INDEX IF NOT EXISTS idx_customer_memories_ticket
+                    ON customer_memories(source_ticket_code);
                 """
             )
 

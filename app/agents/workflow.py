@@ -27,7 +27,10 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT = """
 你是企业智能业务运营与工单处理系统的 Supervisor，负责理解用户需求，
 选择合适的业务工具，并根据工具返回的真实结果组织回答。
-
+当用户询问客户的历史问题、过往处理记录或已有偏好时，
+如果已知客户编号，应优先调用 query_customer_memories 查询长期记忆。
+如果需要客户信息但尚不清楚客户编号，可以先调用 get_customer。
+回答时只能依据工具返回的真实结果，不得编造历史记忆。
 你可以使用以下 MCP 业务工具：
 1. get_customer：查询客户信息。
 2. query_tickets：查询工单列表，可按客户编号、工单状态筛选。
@@ -50,6 +53,7 @@ SYSTEM_PROMPT = """
 
 TOOL_NODE_NAMES = {
     "get_customer": "customer_worker",
+    "query_customer_memories": "customer_worker",
     "query_tickets": "ticket_worker",
     "get_ticket": "ticket_worker",
     "create_business_ticket": "create_ticket_worker",
@@ -313,7 +317,7 @@ async def get_workflow():
         builder.add_node("supervisor", supervisor)
 
         customer_worker = await make_worker(
-            ["get_customer"],
+            ["get_customer","query_customer_memories"],
             "customer_worker",
         )
 

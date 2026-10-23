@@ -65,6 +65,9 @@ async def main():
         "query_tickets",
         "get_ticket",
         "create_business_ticket",
+        "save_customer_memory",
+        "query_customer_memories",
+        "deactivate_customer_memory",
     }
 
     missing_tools = expected_tools - set(tool_map)
@@ -96,6 +99,76 @@ async def main():
         {"customer_code": "CUST999"}
     )
     print(missing_customer_result)
+
+    print("\n========== 6. 保存长期记忆 ==========")
+    memory_result = await tool_map["save_customer_memory"].ainvoke(
+        {
+            "customer_code": "CUST001",
+            "memory_type": "preference",
+            "content": "MCP 长期记忆工具接入验证，测试后停用。",
+        }
+    )
+    print(memory_result)
+
+    # MCP 工具返回的是结构化结果，解析出记忆 ID 后继续验证。
+    import json
+
+    def parse_tool_result(result):
+        if isinstance(result, dict):
+            return result
+
+        if isinstance(result, str):
+            return json.loads(result)
+
+        if isinstance(result, list):
+            for item in result:
+                if isinstance(item, dict) and "text" in item:
+                    try:
+                        return json.loads(item["text"])
+                    except (ValueError, TypeError):
+                        continue
+
+        raise RuntimeError(f"无法解析 MCP 工具结果：{result!r}")
+
+    parsed_memory = parse_tool_result(memory_result)
+
+    if not parsed_memory.get("success"):
+        raise RuntimeError(f"记忆保存失败：{parsed_memory}")
+
+    memory_id = parsed_memory["data"]["id"]
+
+    print("\n========== 7. 查询长期记忆 ==========")
+    query_result = await tool_map["query_customer_memories"].ainvoke(
+        {
+            "customer_code": "CUST001",
+            "memory_type": "preference",
+        }
+    )
+    print(query_result)
+
+    parsed_query = parse_tool_result(query_result)
+
+    if not parsed_query.get("success"):
+        raise RuntimeError(f"记忆查询失败：{parsed_query}")
+
+    if not any(
+        item["id"] == memory_id
+        for item in parsed_query["data"]
+    ):
+        raise RuntimeError("未能查询到刚刚保存的长期记忆")
+
+    print("\n========== 8. 停用测试记忆 ==========")
+    deactivate_result = await tool_map[
+        "deactivate_customer_memory"
+    ].ainvoke({"memory_id": memory_id})
+    print(deactivate_result)
+
+    parsed_deactivate = parse_tool_result(deactivate_result)
+
+    if not parsed_deactivate.get("success"):
+        raise RuntimeError(f"记忆停用失败：{parsed_deactivate}")
+
+    print("\n长期记忆 MCP 工具验证通过。")
 
     print("\n========== MCP Client 测试完成 ==========")
 

@@ -219,3 +219,167 @@ def update_ticket_status(
         return ticket
     finally:
         conn.close()
+
+
+def save_customer_memory(
+    customer_code: str,
+    memory_type: str,
+    content: str,
+    source_ticket_code: Optional[str] = None,
+) -> dict:
+    """保存客户长期业务记忆。"""
+    allowed_types = {
+        "issue_history",
+        "resolution",
+        "preference",
+        "pending_followup",
+    }
+
+    if memory_type not in allowed_types:
+        raise ValueError(f"无效的记忆类型：{memory_type}")
+
+    if not content or not content.strip():
+        raise ValueError("记忆内容不能为空")
+
+    conn = get_connection()
+
+    try:
+        with conn:
+            customer = conn.execute(
+                """
+                SELECT id
+                FROM customers
+                WHERE customer_code = ?
+                """,
+                (customer_code,),
+            ).fetchone()
+
+            if customer is None:
+                raise ValueError(f"客户不存在：{customer_code}")
+
+            if source_ticket_code is not None:
+                ticket = conn.execute(
+                    """
+                    SELECT id
+                    FROM tickets
+                    WHERE ticket_code = ?
+                      AND customer_id = ?
+                    """,
+                    (source_ticket_code, customer["id"]),
+                ).fetchone()
+
+                if ticket is None:
+                    raise ValueError(
+                        f"工单不存在或不属于该客户：{source_ticket_code}"
+                    )
+
+            cursor = conn.execute(
+                """
+                INSERT INTO customer_memories (
+                    customer_id,
+                    memory_type,
+                    content,
+                    source_ticket_code
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    customer["id"],
+                    memory_type,
+                    content.strip(),
+                    source_ticket_code,
+                ),
+            )
+
+            memory_id = cursor.lastrowid
+
+        return {
+            "id": memory_id,
+            "customer_code": customer_code,
+            "memory_type": memory_type,
+            "content": content.strip(),
+            "source_ticket_code": source_ticket_code,
+            "is_active": 1,
+        }
+    finally:
+        conn.close()
+
+
+def list_customer_memories(
+    customer_code: str,
+    memory_type: Optional[str] = None,
+    include_inactive: bool = False,
+    limit: int = 20,
+) -> list[dict]:
+    """按客户查询长期记忆，默认只返回有效记忆。"""
+    if not customer_code or not customer_code.strip():
+        raise ValueError("客户编号不能为空")
+
+    if limit < 1 or limit > 100:
+        raise ValueError("limit 必须在 1 到 100 之间")
+
+    allowed_types = {
+        "issue_history",
+        "resolution",
+        "preference",
+        "pending_followup",
+    }
+
+    if memory_type is not None and memory_type not in allowed_types:
+        raise ValueError(f"无效的记忆类型：{memory_type}")
+
+    conn = get_connection()
+
+    try:
+        sql = """
+            SELECT
+                m.id,
+                c.customer_code,
+                m.memory_type,
+                m.content,
+                m.source_ticket_code,
+                m.is_active,
+                m.created_at,
+                m.updated_at
+            FROM customer_memories AS m
+            JOIN customers AS c ON c.id = m.customer_id
+            WHERE c.customer_code = ?
+        """
+        params = [customer_code.strip()]
+
+        if not include_inactive:
+            sql += " AND m.is_active = 1"
+
+        if memory_type is not None:
+            sql += " AND m.memory_type = ?"
+            params.append(memory_type)
+
+        sql += " ORDER BY m.created_at DESC, m.id DESC LIMIT ?"
+        params.append(limit)
+
+        rows = conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def deactivate_customer_memory(memory_id: int) -> bool:
+    """停用一条长期记忆，不物理删除记录。"""
+    conn = get_connection()
+
+    try:
+        with conn:
+            cursor = conn.execute(
+                """
+                UPDATE customer_memories
+                SET is_active = 0,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                  AND is_active = 1
+                """,
+                (memory_id,),
+            )
+
+        return cursor.rowcount > 0
+    finally:
+        conn.close()

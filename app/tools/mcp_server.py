@@ -170,6 +170,82 @@ def create_business_ticket(
     except Exception as exc:
         return error_result("工单创建失败", exc)
 
+@mcp.tool()
+def save_customer_memory(
+    customer_code: str,
+    memory_type: str,
+    content: str,
+    source_ticket_code: str | None = None,
+) -> dict:
+    """保存客户长期业务记忆。记忆类型为 issue_history、resolution、preference、pending_followup。"""
+    try:
+        memory = repository.save_customer_memory(
+            customer_code=customer_code,
+            memory_type=memory_type,
+            content=content,
+            source_ticket_code=source_ticket_code,
+        )
+        return success_result("客户长期记忆保存成功", memory)
+
+    except (ValueError, LookupError) as exc:
+        return {
+            "success": False,
+            "message": str(exc),
+            "error_code": type(exc).__name__,
+        }
+
+    except Exception as exc:
+        return error_result("客户长期记忆保存失败", exc)
+
+
+@mcp.tool()
+def query_customer_memories(
+    customer_code: str,
+    memory_type: str | None = None,
+    include_inactive: bool = False,
+    limit: int = 20,
+) -> dict:
+    """查询指定客户的长期业务记忆，可按记忆类型过滤，默认仅查询有效记忆。"""
+    try:
+        memories = repository.list_customer_memories(
+            customer_code=customer_code,
+            memory_type=memory_type,
+            include_inactive=include_inactive,
+            limit=limit,
+        )
+        return success_result("客户长期记忆查询成功", memories)
+
+    except (ValueError, LookupError) as exc:
+        return {
+            "success": False,
+            "message": str(exc),
+            "error_code": type(exc).__name__,
+        }
+
+    except Exception as exc:
+        return error_result("客户长期记忆查询失败", exc)
+
+
+@mcp.tool()
+def deactivate_customer_memory(memory_id: int) -> dict:
+    """按记忆 ID 停用一条长期业务记忆，不会物理删除记录。"""
+    try:
+        deactivated = repository.deactivate_customer_memory(memory_id)
+
+        if not deactivated:
+            return {
+                "success": False,
+                "message": f"记忆不存在或已经停用：{memory_id}",
+                "error_code": "MEMORY_NOT_FOUND_OR_INACTIVE",
+            }
+
+        return success_result(
+            "客户长期记忆已停用",
+            {"memory_id": memory_id, "is_active": 0},
+        )
+
+    except Exception as exc:
+        return error_result("客户长期记忆停用失败", exc)
 
 if __name__ == "__main__":
     logger.info("Starting business-ops MCP server")
